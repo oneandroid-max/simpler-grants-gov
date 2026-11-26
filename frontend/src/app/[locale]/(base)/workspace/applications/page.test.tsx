@@ -3,6 +3,7 @@ import { axe } from "jest-axe";
 import { identity } from "lodash";
 import Applications from "src/app/[locale]/(base)/workspace/applications/page";
 import { UnauthorizedError } from "src/errors";
+import { PaginatedApplicationsResult } from "src/services/fetch/fetchers/userApplicationsFetcher";
 import {
   ApplicationDetail,
   ApplicationStatus,
@@ -22,10 +23,37 @@ jest.mock("next-intl/server", () => ({
   setRequestLocale: identity,
 }));
 
-const applications = jest.fn().mockResolvedValue([]);
+jest.mock("next/navigation", () => ({
+  usePathname: () => "/workspace/applications",
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+const makeResult = (
+  items: DeepPartial<ApplicationDetail>[],
+  overrides?: Partial<PaginatedApplicationsResult["paginationInfo"]>,
+): PaginatedApplicationsResult => ({
+  data: items as ApplicationDetail[],
+  paginationInfo: {
+    page_offset: 1,
+    page_size: 25,
+    total_pages: items.length > 0 ? 1 : 0,
+    total_records: items.length,
+    order_by: "created_at",
+    sort_direction: "descending",
+    ...overrides,
+  },
+});
+
+const applications = jest.fn().mockResolvedValue(makeResult([]));
 
 jest.mock("src/services/fetch/fetchers/userApplicationsFetcher", () => ({
-  fetchApplications: () => applications() as Promise<ApplicationDetail[]>,
+  APPLICATIONS_PAGE_SIZE: 25,
+  fetchApplications: (...args: unknown[]) =>
+    applications(...args) as Promise<PaginatedApplicationsResult>,
 }));
 
 const mockBreadcrumbs = jest.fn();
@@ -45,7 +73,7 @@ describe("Applications", () => {
 
   describe("no applications have been saved", () => {
     beforeEach(() => {
-      applications.mockResolvedValue([]);
+      applications.mockResolvedValue(makeResult([]));
     });
 
     it("passes the correct breadcrumbs", async () => {
@@ -136,8 +164,26 @@ describe("Applications", () => {
       };
     });
 
+    it("fetches the requested page from searchParams with pageSize 25", async () => {
+      applications.mockResolvedValue(
+        makeResult([basicApplication], {
+          page_offset: 2,
+          total_pages: 3,
+          total_records: 52,
+        }),
+      );
+      const component = await Applications({
+        params: localeParams,
+        searchParams: Promise.resolve({ page: "2" }),
+      });
+      render(component);
+
+      expect(applications).toHaveBeenCalledWith(2, 25);
+      expect(await screen.findByText("first!!!")).toBeVisible();
+    });
+
     it("passes accessibility scan", async () => {
-      applications.mockResolvedValue([basicApplication]);
+      applications.mockResolvedValue(makeResult([basicApplication]));
       const component = await Applications({ params: localeParams });
       const { container } = render(component);
       const results = await waitFor(() => axe(container));
@@ -146,7 +192,7 @@ describe("Applications", () => {
     });
 
     it("renders headings", async () => {
-      applications.mockResolvedValue([basicApplication]);
+      applications.mockResolvedValue(makeResult([basicApplication]));
       const component = await Applications({ params: localeParams });
       render(component);
 
@@ -168,7 +214,7 @@ describe("Applications", () => {
     });
 
     it("renders close date", async () => {
-      applications.mockResolvedValue([basicApplication]);
+      applications.mockResolvedValue(makeResult([basicApplication]));
       const component = await Applications({ params: localeParams });
       render(component);
 
@@ -176,7 +222,7 @@ describe("Applications", () => {
     });
 
     it("renders application filing name", async () => {
-      applications.mockResolvedValue([basicApplication]);
+      applications.mockResolvedValue(makeResult([basicApplication]));
       const component = await Applications({ params: localeParams });
       render(component);
 
@@ -184,7 +230,7 @@ describe("Applications", () => {
     });
 
     it("renders opportunity name and agency", async () => {
-      applications.mockResolvedValue([basicApplication]);
+      applications.mockResolvedValue(makeResult([basicApplication]));
       const component = await Applications({ params: localeParams });
       render(component);
 
@@ -198,7 +244,7 @@ describe("Applications", () => {
 
     describe("renders status", () => {
       it("if in draft", async () => {
-        applications.mockResolvedValue([basicApplication]);
+        applications.mockResolvedValue(makeResult([basicApplication]));
         const component = await Applications({ params: localeParams });
         render(component);
 
@@ -208,12 +254,14 @@ describe("Applications", () => {
       });
 
       it("if submitted", async () => {
-        applications.mockResolvedValue([
-          {
-            ...basicApplication,
-            application_status: ApplicationStatus.SUBMITTED,
-          },
-        ]);
+        applications.mockResolvedValue(
+          makeResult([
+            {
+              ...basicApplication,
+              application_status: ApplicationStatus.SUBMITTED,
+            },
+          ]),
+        );
         const component = await Applications({ params: localeParams });
         render(component);
 
@@ -223,12 +271,14 @@ describe("Applications", () => {
       });
 
       it("if approved", async () => {
-        applications.mockResolvedValue([
-          {
-            ...basicApplication,
-            application_status: ApplicationStatus.ACCEPTED,
-          },
-        ]);
+        applications.mockResolvedValue(
+          makeResult([
+            {
+              ...basicApplication,
+              application_status: ApplicationStatus.ACCEPTED,
+            },
+          ]),
+        );
         const component = await Applications({ params: localeParams });
         render(component);
 
@@ -240,7 +290,7 @@ describe("Applications", () => {
 
     describe("renders type", () => {
       it("if started as an individual", async () => {
-        applications.mockResolvedValue([basicApplication]);
+        applications.mockResolvedValue(makeResult([basicApplication]));
         const component = await Applications({ params: localeParams });
         render(component);
 
@@ -250,14 +300,16 @@ describe("Applications", () => {
       });
 
       it("if started as an organization", async () => {
-        applications.mockResolvedValue([
-          {
-            ...basicApplication,
-            organization: {
-              sam_gov_entity: { legal_business_name: "Great Organization" },
+        applications.mockResolvedValue(
+          makeResult([
+            {
+              ...basicApplication,
+              organization: {
+                sam_gov_entity: { legal_business_name: "Great Organization" },
+              },
             },
-          },
-        ]);
+          ]),
+        );
         const component = await Applications({ params: localeParams });
         render(component);
 

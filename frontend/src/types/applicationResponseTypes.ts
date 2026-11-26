@@ -150,3 +150,8 @@ export interface ApplicationSubmissionsApiResponse extends APIResponse {
   data: ApplicationSubmission[];
   pagination_info: PaginationInfo;
 }
+
+export interface UserApplicationsApiResponse extends APIResponse {
+  data: ApplicationDetail[];
+  pagination_info: PaginationInfo;
+}
